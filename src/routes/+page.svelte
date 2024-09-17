@@ -459,15 +459,15 @@
       <Table>
         <TableHeader>
           <TableRow>
-            <th class="font-bold sortable px-4 py-2 text-left" on:click={() => sortBy('Date')}>
+            <th class="font-bold sortable px-4 py-2 text-left text-base" on:click={() => sortBy('Date')}>
               Date
               {#if sortColumn === 'Date'}
                 <span class="sort-arrow">{sortOrder === 'asc' ? '▲' : '▼'}</span>
               {/if}
             </th>
-            <th class="font-bold px-4 py-2 text-left">Vos numéros</th>
-            <th class="font-bold px-4 py-2 text-left">Combinaison gagnante</th>
-            <th class="font-bold sortable px-4 py-2 text-left" on:click={() => sortBy('Gain')}>
+            <th class="font-bold px-4 py-2 text-left text-base">Vos numéros</th>
+            <th class="font-bold px-4 py-2 text-left text-base">Combinaison gagnante</th>
+            <th class="font-bold sortable px-4 py-2 text-left text-base" on:click={() => sortBy('Gain')}>
               Gain
               {#if sortColumn === 'Gain'}
                 <span class="sort-arrow">{sortOrder === 'asc' ? '▲' : '▼'}</span>
