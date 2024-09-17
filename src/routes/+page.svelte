@@ -354,7 +354,7 @@
 <!-- Affichage HTML -->
 <div class="container max-w-5xl mx-auto space-y-4">
   <Card class="p-6">
-    <h1 class="text-2xl font-bold">Simulez vos gains au Loto&nbsp;?</h1>
+    <h1 class="text-2xl font-bold">Simulez vos gains au Loto</h1>
     <p class="text-gray-600">
       Imaginez que vous jouez les mêmes numéros depuis le 2 novembre 2019...
     </p>
