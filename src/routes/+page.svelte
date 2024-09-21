@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { dsvFormat } from 'd3-dsv';
   import { Button } from '$lib/components/ui/button';
   import {
@@ -22,6 +22,11 @@
   let isLoading = false;
   const ticketPrice = 2.2;
   let gamesPlayedMessage = ""; // Message pour les grilles jouées
+  let resultsContainer: HTMLElement; // Référence au conteneur de résultats pour scroller après le calcul
+
+  
+  let calculatedNumbers: number[] = [];
+  let calculatedLuckyNumber: number | null = null;
 
   const numbers = Array.from({ length: 49 }, (_, i) => i + 1);
   const luckyNumbers = Array.from({ length: 10 }, (_, i) => i + 1);
@@ -40,6 +45,20 @@
     selectedLuckyNumber = number;
   }
 
+  async function fetchLotoData() {
+  try {
+    const response = await fetch('/api/loto'); // Appel à l'API
+    if (!response.ok) {
+      throw new Error('Failed to fetch loto data');
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Erreur lors du chargement des données :', error);
+    return [];
+  }
+}
+
   function resetSelection() {
     selectedNumbers = [];
     selectedLuckyNumber = null;
@@ -50,6 +69,11 @@
     message = '';
     drawResults = [];
     sortColumn = 'Date';
+    sortOrder = 'asc';
+    gamesPlayedMessage = "";
+
+    // Réinitialisation du tri
+    sortColumn = null;
     sortOrder = 'asc';
   }
 
@@ -82,7 +106,7 @@
     }
 
     // Créer le message avec le nombre de grilles jouées
-    gamesPlayedMessage = `Il vous aurait fallu ${gamesPlayed} grilles pour en obtenir une rentable au Loto.`;
+    gamesPlayedMessage = `Il vous aurait fallu jouer ${gamesPlayed} grilles Loto différentes pour en obtenir une rentable.`;
     return gamesPlayed;
   }
 
@@ -123,18 +147,32 @@
       console.error('Erreur lors du chargement des données :', error);
     }
   });
+  
+  // Si je veux utiliser une API pour récupérer les données du Loto
+  /*
+  onMount(async () => {
+    lotoData = await fetchLotoData();
+  });
+  */
 
   function parseDate(dateString: string) {
     const [day, month, year] = dateString.split('/');
     return new Date(`${year}-${month}-${day}`);
   }
 
-  function calculateResults() {
+  async function calculateResults() {
+
     gamesPlayedMessage = "";
+
+    // Validation côté logique avant de calculer les résultats
     if (selectedNumbers.length !== 5 || selectedLuckyNumber === null) {
       message = 'Veuillez sélectionner 5 numéros et un numéro chance.';
       return;
     }
+
+    // Mettre à jour les numéros calculés, distincts des numéros sélectionnés
+    calculatedNumbers = [...selectedNumbers];
+    calculatedLuckyNumber = selectedLuckyNumber;
 
     isLoading = true;
     totalSpent = ticketPrice * lotoData.length;
@@ -149,6 +187,7 @@
 
       const matchCount = matchingNumbers.length;
 
+      // Calcul des gains en fonction du nombre de correspondances
       if (matchCount === 5 && matchingLuckyNumber) {
         gain = draw.gains.rang1;
       } else if (matchCount === 5) {
@@ -186,14 +225,28 @@
     message = `Vous avez dépensé ${totalSpent.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€ pour jouer, vous avez gagné ${totalGamesWon} fois pour un total de ${totalWon.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€, votre résultat net est de ${netResult.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€`;
 
     isLoading = false;
+
+    // Réinitialisation du tri pour afficher les résultats triés par date en DESC
+    sortColumn = 'Date';
+    sortOrder = 'desc';  // Tri par défaut DESC
+    
+    // Attendre que le DOM soit mis à jour avec les résultats pour scroller vers le bas
+    await tick();
+
+    // Scroll vers le conteneur de résultats après la génération
+    if (resultsContainer) {
+      resultsContainer.scrollIntoView({ behavior: 'smooth' });
+    }
   }
 
   function sortBy(column: string) {
     if (sortColumn === column) {
+      // Inverser l'ordre si c'est déjà trié par cette colonne
       sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
     } else {
       sortColumn = column;
-      sortOrder = 'asc';
+      // Si la colonne est "Gain", on commence par "desc", sinon par "asc"
+      sortOrder = column === 'Gain' ? 'desc' : 'asc';
     }
     sortDrawResults();
   }
@@ -201,16 +254,35 @@
   function sortDrawResults() {
     drawResults = [...drawResults].sort((a, b) => {
       let valueA, valueB;
+
+      // Comparaison principale selon la colonne sélectionnée
       if (sortColumn === 'Date') {
         valueA = parseDate(a.date);
         valueB = parseDate(b.date);
       } else if (sortColumn === 'Gain') {
         valueA = a.gain;
         valueB = b.gain;
-      } else {
-        return 0;
+
+        // Si les gains sont égaux, on compare le nombre de bons numéros
+        if (valueA === valueB) {
+          const matchCountA = a.matchingNumbers.length;
+          const matchCountB = b.matchingNumbers.length;
+
+          // Si les nombres de bons numéros sont égaux, on compare le numéro chance
+          if (matchCountA === matchCountB) {
+            const luckyA = a.matchingLuckyNumber ? 1 : 0;
+            const luckyB = b.matchingLuckyNumber ? 1 : 0;
+
+            // Trier par le numéro chance si égalité sur le nombre de bons numéros
+            return sortOrder === 'asc' ? luckyA - luckyB : luckyB - luckyA;
+          }
+
+          // Trier par le nombre de bons numéros
+          return sortOrder === 'asc' ? matchCountA - matchCountB : matchCountB - matchCountA;
+        }
       }
 
+      // Comparaison principale (Gain ou Date)
       if (valueA < valueB) {
         return sortOrder === 'asc' ? -1 : 1;
       } else if (valueA > valueB) {
@@ -225,10 +297,6 @@
 <!-- Style -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
-
-  body {
-    font-family: 'Roboto', sans-serif;
-  }
 
   .inline-block {
     display: inline-block;
@@ -253,11 +321,6 @@
     padding-top: 20px;
   }
 
-  .sortable:hover {
-    cursor: pointer;
-    text-decoration: underline;
-  }
-
   .sort-arrow {
     margin-left: 5px;
   }
@@ -271,10 +334,6 @@
       padding: 10px;
     }
 
-    .p-6 {
-      padding: 4px;
-    }
-
     .text-2xl {
       font-size: 1.5rem;
     }
@@ -283,23 +342,6 @@
       font-size: 1.25rem;
     }
 
-    .px-4 {
-      padding-left: 8px;
-      padding-right: 8px;
-    }
-
-    .py-2 {
-      padding-top: 4px;
-      padding-bottom: 4px;
-    }
-
-    .table-cell {
-      font-size: 12px;
-    }
-
-    .table-header {
-      font-size: 14px;
-    }
 
     .flex {
       flex-wrap: wrap;
@@ -314,40 +356,6 @@
       overflow-x: scroll;
     }
 
-    table {
-      min-width: 100%;
-      font-size: 12px;
-    }
-
-    th, td {
-      padding: 6px;
-    }
-
-    .alert-message, .message-box {
-      padding: 10px;
-      margin: 10px 0;
-    }
-
-    .card {
-      margin: 10px;
-      padding: 10px;
-    }
-
-    .number-cell {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 8px;
-    border: 1px solid #ddd;
-    margin: 4px;
-    min-width: 40px;
-  }
-
-  .number-row {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 8px;
-  }
   }
 </style>
 
@@ -405,7 +413,7 @@
     {/if}
   </Card>
 
-  <div class="flex justify-center space-x-4">
+  <div class="flex justify-center space-x-4" bind:this={resultsContainer}>
     <Button
       on:click={calculateResults}
       disabled={selectedNumbers.length !== 5 || selectedLuckyNumber === null || isLoading}
@@ -459,20 +467,20 @@
       <Table>
         <TableHeader>
           <TableRow>
-            <th class="font-bold sortable px-4 py-2 text-left text-base" on:click={() => sortBy('Date')}>
+            <TableCell class="font-bold cursor-pointer hover:underline px-4 py-2 text-left text-base" on:click={() => sortBy('Date')}>
               Date
               {#if sortColumn === 'Date'}
                 <span class="sort-arrow">{sortOrder === 'asc' ? '▲' : '▼'}</span>
               {/if}
-            </th>
-            <th class="font-bold px-4 py-2 text-left text-base">Vos numéros</th>
-            <th class="font-bold px-4 py-2 text-left text-base">Combinaison gagnante</th>
-            <th class="font-bold sortable px-4 py-2 text-left text-base" on:click={() => sortBy('Gain')}>
+            </TableCell>
+            <TableCell class="font-bold px-4 py-2 text-left text-base">Vos numéros</TableCell>
+            <TableCell class="font-bold px-4 py-2 text-left text-base">Combinaison gagnante</TableCell>
+            <TableCell class="font-bold cursor-pointer hover:underline px-4 py-2 text-left text-base" on:click={() => sortBy('Gain')}>
               Gain
               {#if sortColumn === 'Gain'}
                 <span class="sort-arrow">{sortOrder === 'asc' ? '▲' : '▼'}</span>
               {/if}
-            </th>
+            </TableCell>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -480,19 +488,19 @@
             <TableRow>
               <!-- Colonne Date -->
               <TableCell>{result.date}</TableCell>
-        
+
               <!-- Colonne Vos numéros -->
               <TableCell>
-                {#each selectedNumbers as num}
+                {#each calculatedNumbers as num}
                   <span class="inline-block p-2 m-1 border rounded {result.matchingNumbers.includes(num) ? 'highlight' : ''}">
                     {num}
                   </span>
                 {/each}
                 <span class="inline-block p-2 m-1 border rounded lucky-number {result.matchingLuckyNumber ? 'highlight' : ''}">
-                  {selectedLuckyNumber}
+                  {calculatedLuckyNumber}
                 </span>
               </TableCell>
-        
+      
               <!-- Colonne Combinaison gagnante -->
               <TableCell>
                 {#each result.draw as num}
@@ -500,7 +508,7 @@
                 {/each}
                 <span class="inline-block p-2 m-1 border rounded lucky-number">{result.chance}</span>
               </TableCell>
-        
+      
               <!-- Colonne Gain -->
               <TableCell>
                 {result.gain > 0
