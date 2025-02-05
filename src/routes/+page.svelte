@@ -1,4 +1,5 @@
 <script lang="ts">
+  // Import necessary modules and components
   import { onMount, tick } from 'svelte';
   import { dsvFormat } from 'd3-dsv';
   import { Button } from '$lib/components/ui/button';
@@ -11,6 +12,11 @@
   } from '$lib/components/ui/table';
   import Card from '$lib/components/ui/card/card.svelte';
 
+  // Import the animated number component from @number-flow/svelte
+  import NumberFlow from '@number-flow/svelte';
+  // Si cette syntaxe ne fonctionne pas, essaie :
+  // import { NumberFlow } from '@number-flow/svelte';
+
   let selectedNumbers: number[] = [];
   let selectedLuckyNumber: number | null = null;
   let totalSpent = 0;
@@ -21,10 +27,9 @@
   let drawResults: any[] = [];
   let isLoading = false;
   const ticketPrice = 2.2;
-  let gamesPlayedMessage = ""; // Message pour les grilles jouées
-  let resultsContainer: HTMLElement; // Référence au conteneur de résultats pour scroller après le calcul
+  let gamesPlayedMessage = ""; // Message for played grids
+  let resultsContainer: HTMLElement; // Reference to the results container for scrolling
 
-  
   let calculatedNumbers: number[] = [];
   let calculatedLuckyNumber: number | null = null;
 
@@ -46,18 +51,18 @@
   }
 
   async function fetchLotoData() {
-  try {
-    const response = await fetch('/api/loto'); // Appel à l'API
-    if (!response.ok) {
-      throw new Error('Failed to fetch loto data');
+    try {
+      const response = await fetch('/api/loto');
+      if (!response.ok) {
+        throw new Error('Failed to fetch loto data');
+      }
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching loto data:', error);
+      return [];
     }
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Erreur lors du chargement des données :', error);
-    return [];
   }
-}
 
   function resetSelection() {
     selectedNumbers = [];
@@ -71,28 +76,24 @@
     sortColumn = 'Date';
     sortOrder = 'asc';
     gamesPlayedMessage = "";
-
-    // Réinitialisation du tri
     sortColumn = null;
     sortOrder = 'asc';
   }
 
   function randomNumbers() {
-    const randomNumbers = [];
-    while (randomNumbers.length < 5) {
+    const randomNums = [];
+    while (randomNums.length < 5) {
       const random = Math.floor(Math.random() * 49) + 1;
-      if (!randomNumbers.includes(random)) {
-        randomNumbers.push(random);
+      if (!randomNums.includes(random)) {
+        randomNums.push(random);
       }
     }
-    selectedNumbers = randomNumbers;
+    selectedNumbers = randomNums;
     selectedLuckyNumber = Math.floor(Math.random() * 10) + 1;
   }
 
   function randomNumbersUntilWin() {
     let gamesPlayed = 0;
-
-    // Réinitialiser les variables globales au début
     totalSpent = 0;
     totalWon = 0;
     netResult = 0;
@@ -104,8 +105,6 @@
       calculateResults();
       gamesPlayed++;
     }
-
-    // Créer le message avec le nombre de grilles jouées
     gamesPlayedMessage = `Il vous aurait fallu jouer ${gamesPlayed} grilles Loto différentes pour en obtenir une rentable.`;
     return gamesPlayed;
   }
@@ -118,14 +117,12 @@
     try {
       const response = await fetch('/data/loto_201911.csv');
       const csvText = await response.text();
-
       const semicolonParser = dsvFormat(';');
       const parsedData = semicolonParser.parse(csvText);
 
       lotoData = parsedData.map((draw) => {
         const [combinaison, chance] = draw.combinaison_gagnante_en_ordre_croissant.split('+');
         const drawNumbers = combinaison.split('-').map(Number);
-
         return {
           date: draw.date_de_tirage,
           draw: drawNumbers,
@@ -144,16 +141,9 @@
         };
       });
     } catch (error) {
-      console.error('Erreur lors du chargement des données :', error);
+      console.error('Error loading loto data:', error);
     }
   });
-  
-  // Si je veux utiliser une API pour récupérer les données du Loto
-  /*
-  onMount(async () => {
-    lotoData = await fetchLotoData();
-  });
-  */
 
   function parseDate(dateString: string) {
     const [day, month, year] = dateString.split('/');
@@ -161,16 +151,11 @@
   }
 
   async function calculateResults() {
-
     gamesPlayedMessage = "";
-
-    // Validation côté logique avant de calculer les résultats
     if (selectedNumbers.length !== 5 || selectedLuckyNumber === null) {
       message = 'Veuillez sélectionner 5 numéros et un numéro chance.';
       return;
     }
-
-    // Mettre à jour les numéros calculés, distincts des numéros sélectionnés
     calculatedNumbers = [...selectedNumbers];
     calculatedLuckyNumber = selectedLuckyNumber;
 
@@ -184,10 +169,8 @@
       const matchingNumbers = selectedNumbers.filter((num) => draw.draw.includes(num));
       const matchingLuckyNumber = selectedLuckyNumber === draw.chance;
       let gain = 0;
-
       const matchCount = matchingNumbers.length;
 
-      // Calcul des gains en fonction du nombre de correspondances
       if (matchCount === 5 && matchingLuckyNumber) {
         gain = draw.gains.rang1;
       } else if (matchCount === 5) {
@@ -207,12 +190,10 @@
       } else if (matchCount === 1 && matchingLuckyNumber) {
         gain = draw.gains.rang9;
       }
-
       if (gain > 0) {
         totalWon += gain;
         totalGamesWon++;
       }
-
       return {
         ...draw,
         matchingNumbers,
@@ -225,15 +206,9 @@
     message = `Vous avez dépensé ${totalSpent.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€ pour jouer, vous avez gagné ${totalGamesWon} fois pour un total de ${totalWon.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€, votre résultat net est de ${netResult.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€`;
 
     isLoading = false;
-
-    // Réinitialisation du tri pour afficher les résultats triés par date en DESC
     sortColumn = 'Date';
-    sortOrder = 'desc';  // Tri par défaut DESC
-    
-    // Attendre que le DOM soit mis à jour avec les résultats pour scroller vers le bas
+    sortOrder = 'desc';
     await tick();
-
-    // Scroll vers le conteneur de résultats après la génération
     if (resultsContainer) {
       resultsContainer.scrollIntoView({ behavior: 'smooth' });
     }
@@ -241,11 +216,9 @@
 
   function sortBy(column: string) {
     if (sortColumn === column) {
-      // Inverser l'ordre si c'est déjà trié par cette colonne
       sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
     } else {
       sortColumn = column;
-      // Si la colonne est "Gain", on commence par "desc", sinon par "asc"
       sortOrder = column === 'Gain' ? 'desc' : 'asc';
     }
     sortDrawResults();
@@ -254,35 +227,23 @@
   function sortDrawResults() {
     drawResults = [...drawResults].sort((a, b) => {
       let valueA, valueB;
-
-      // Comparaison principale selon la colonne sélectionnée
       if (sortColumn === 'Date') {
         valueA = parseDate(a.date);
         valueB = parseDate(b.date);
       } else if (sortColumn === 'Gain') {
         valueA = a.gain;
         valueB = b.gain;
-
-        // Si les gains sont égaux, on compare le nombre de bons numéros
         if (valueA === valueB) {
           const matchCountA = a.matchingNumbers.length;
           const matchCountB = b.matchingNumbers.length;
-
-          // Si les nombres de bons numéros sont égaux, on compare le numéro chance
           if (matchCountA === matchCountB) {
             const luckyA = a.matchingLuckyNumber ? 1 : 0;
             const luckyB = b.matchingLuckyNumber ? 1 : 0;
-
-            // Trier par le numéro chance si égalité sur le nombre de bons numéros
             return sortOrder === 'asc' ? luckyA - luckyB : luckyB - luckyA;
           }
-
-          // Trier par le nombre de bons numéros
           return sortOrder === 'asc' ? matchCountA - matchCountB : matchCountB - matchCountA;
         }
       }
-
-      // Comparaison principale (Gain ou Date)
       if (valueA < valueB) {
         return sortOrder === 'asc' ? -1 : 1;
       } else if (valueA > valueB) {
@@ -294,73 +255,7 @@
   }
 </script>
 
-<!-- Style -->
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
-
-  .inline-block {
-    display: inline-block;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    margin: 4px;
-    min-width: 40px; /* Assure que les numéros ont une taille minimale uniforme */
-    text-align: center;
-  }
-
-  .highlight {
-    background-color: #34d399;
-    color: white;
-  }
-
-  .lucky-number {
-    border-color: #d97706;
-  }
-
-  .container {
-    padding-top: 20px;
-  }
-
-  .sort-arrow {
-    margin-left: 5px;
-  }
-
-  @media (max-width: 600px) {
-    .grid-cols-10 {
-      grid-template-columns: repeat(5, 1fr);
-    }
-
-    .container {
-      padding: 10px;
-    }
-
-    .text-2xl {
-      font-size: 1.5rem;
-    }
-
-    .text-xl {
-      font-size: 1.25rem;
-    }
-
-
-    .flex {
-      flex-wrap: wrap;
-    }
-
-    .space-x-4 {
-      gap: 8px;
-    }
-
-    .overflow-x-auto {
-      width: 100%;
-      overflow-x: scroll;
-    }
-
-  }
-</style>
-
-<!-- Affichage HTML -->
-<div class="container max-w-5xl mx-auto space-y-4">
+<div class="pt-5 max-w-5xl mx-auto space-y-4">
   <Card class="p-6">
     <h1 class="text-2xl font-bold">Simulez vos gains au Loto</h1>
     <p class="text-gray-600">
@@ -370,7 +265,7 @@
 
   <Card class="p-6">
     <h2 class="text-xl font-semibold mb-2">Choisissez les 5 numéros</h2>
-    <div class="grid grid-cols-10 gap-2 mb-4">
+    <div class="grid grid-cols-5 sm:grid-cols-10 gap-2 mb-4">
       {#each numbers as number}
         <Button
           variant={selectedNumbers.includes(number) ? 'default' : 'outline'}
@@ -385,7 +280,7 @@
     <p class="mb-2">Numéros sélectionnés :</p>
     <div class="flex flex-wrap mb-4">
       {#each selectedNumbers as num}
-        <span class="inline-block p-2 m-1 border rounded">
+        <span class="inline-block p-2 m-1 border rounded min-w-[40px] text-center">
           {num}
         </span>
       {/each}
@@ -394,7 +289,7 @@
 
   <Card class="p-6">
     <h2 class="text-xl font-semibold mb-2">Choisissez le numéro chance</h2>
-    <div class="grid grid-cols-10 gap-2 mb-4">
+    <div class="grid grid-cols-5 sm:grid-cols-10 gap-2 mb-4">
       {#each luckyNumbers as number}
         <Button
           variant={selectedLuckyNumber === number ? 'default' : 'outline'}
@@ -407,7 +302,7 @@
     </div>
     <p class="mb-2">Numéro chance sélectionné :</p>
     {#if selectedLuckyNumber}
-      <span class="inline-block p-2 m-1 border rounded lucky-number">
+      <span class="inline-block p-2 m-1 border rounded min-w-[40px] text-center border-[#d97706]">
         {selectedLuckyNumber}
       </span>
     {/if}
@@ -456,13 +351,22 @@
     </div>
   {/if}
 
-  {#if message}
-    <div class="p-4 mt-4 text-white font-bold" class:bg-green-500={netResult >= 0} class:bg-red-500={netResult < 0}>
-      <p>{message}</p>
-    </div>
-  {/if}
-
   {#if drawResults.length > 0}
+    <!-- Animated net result display using NumberFlow -->
+    <Card class="mt-4 p-6">
+      <div class="flex items-center justify-center">
+        <NumberFlow
+          value={netResult}
+          format={{ style: 'currency', currency: 'EUR', trailingZeroDisplay: 'stripIfInteger' }}
+          class="text-4xl font-bold"
+          style="color: {netResult >= 0 ? '#34d399' : '#dc2626'};"
+          transformTiming={{ duration: 1000, easing: 'ease-in-out' }}
+          spinTiming={{ duration: 1000, easing: 'ease-in-out' }}
+          opacityTiming={{ duration: 500, easing: 'ease-out' }}
+        />
+      </div>
+    </Card>
+
     <div class="mt-4 overflow-x-auto">
       <Table>
         <TableHeader>
@@ -470,7 +374,7 @@
             <TableCell class="font-bold cursor-pointer hover:underline px-4 py-2 text-left text-base" on:click={() => sortBy('Date')}>
               Date
               {#if sortColumn === 'Date'}
-                <span class="sort-arrow">{sortOrder === 'asc' ? '▲' : '▼'}</span>
+                <span class="ml-[5px]">{sortOrder === 'asc' ? '▲' : '▼'}</span>
               {/if}
             </TableCell>
             <TableCell class="font-bold px-4 py-2 text-left text-base">Vos numéros</TableCell>
@@ -478,7 +382,7 @@
             <TableCell class="font-bold cursor-pointer hover:underline px-4 py-2 text-left text-base" on:click={() => sortBy('Gain')}>
               Gain
               {#if sortColumn === 'Gain'}
-                <span class="sort-arrow">{sortOrder === 'asc' ? '▲' : '▼'}</span>
+                <span class="ml-[5px]">{sortOrder === 'asc' ? '▲' : '▼'}</span>
               {/if}
             </TableCell>
           </TableRow>
@@ -486,30 +390,27 @@
         <TableBody>
           {#each drawResults as result}
             <TableRow>
-              <!-- Colonne Date -->
               <TableCell>{result.date}</TableCell>
-
-              <!-- Colonne Vos numéros -->
               <TableCell>
                 {#each calculatedNumbers as num}
-                  <span class="inline-block p-2 m-1 border rounded {result.matchingNumbers.includes(num) ? 'highlight' : ''}">
+                  <span class="inline-block p-2 m-1 border rounded min-w-[40px] text-center {result.matchingNumbers.includes(num) ? 'bg-[#34d399] text-white' : ''}">
                     {num}
                   </span>
                 {/each}
-                <span class="inline-block p-2 m-1 border rounded lucky-number {result.matchingLuckyNumber ? 'highlight' : ''}">
+                <span class="inline-block p-2 m-1 border rounded min-w-[40px] text-center border-[#d97706] {result.matchingLuckyNumber ? 'bg-[#34d399] text-white' : ''}">
                   {calculatedLuckyNumber}
                 </span>
               </TableCell>
-      
-              <!-- Colonne Combinaison gagnante -->
               <TableCell>
                 {#each result.draw as num}
-                  <span class="inline-block p-2 m-1 border rounded">{num}</span>
+                  <span class="inline-block p-2 m-1 border rounded min-w-[40px] text-center">
+                    {num}
+                  </span>
                 {/each}
-                <span class="inline-block p-2 m-1 border rounded lucky-number">{result.chance}</span>
+                <span class="inline-block p-2 m-1 border rounded min-w-[40px] text-center border-[#d97706]">
+                  {result.chance}
+                </span>
               </TableCell>
-      
-              <!-- Colonne Gain -->
               <TableCell>
                 {result.gain > 0
                   ? `${result.gain.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€`
