@@ -14,8 +14,6 @@
 
   // Import the animated number component from @number-flow/svelte
   import NumberFlow from '@number-flow/svelte';
-  // Si cette syntaxe ne fonctionne pas, essaie :
-  // import { NumberFlow } from '@number-flow/svelte';
 
   let selectedNumbers: number[] = [];
   let selectedLuckyNumber: number | null = null;
@@ -259,7 +257,7 @@
   <Card class="p-6">
     <h1 class="text-2xl font-bold">Simulez vos gains au Loto</h1>
     <p class="text-gray-600">
-      Imaginez que vous jouez les mêmes numéros depuis le 2 novembre 2019...
+      Imaginez que vous jouez les mêmes numéros depuis novembre 2019...
     </p>
   </Card>
 
@@ -356,7 +354,8 @@
     <Card class="mt-4 p-6">
       <div class="flex items-center justify-center">
         <NumberFlow
-          value={netResult}
+          value={Math.abs(netResult)}  
+          prefix={netResult >= 0 ? '+' : '-'} 
           format={{ style: 'currency', currency: 'EUR', trailingZeroDisplay: 'stripIfInteger' }}
           class="text-4xl font-bold"
           style="color: {netResult >= 0 ? '#34d399' : '#dc2626'};"
