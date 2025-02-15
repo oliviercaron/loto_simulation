@@ -26,9 +26,7 @@
   let totalWon = 0;
   let totalGamesWon = 0;
   let netResult = 0;
-  let message = '';
   let drawResults: any[] = [];
-  let isLoading = false;
   const ticketPrice = 2.2;
   let gamesPlayedMessage = "";
   let resultsContainer: HTMLElement;
@@ -55,21 +53,6 @@
     selectedLuckyNumber = number;
   }
 
-  // Fetch Loto data from API (not used in here but kept for learning purposes)
-  async function fetchLotoData() {
-    try {
-      const response = await fetch('/api/loto');
-      if (!response.ok) {
-        throw new Error('Failed to fetch loto data');
-      }
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('Error fetching loto data:', error);
-      return [];
-    }
-  }
-
   // Reset all selections and results
   function resetSelection() {
     selectedNumbers = [];
@@ -78,18 +61,15 @@
     totalWon = 0;
     totalGamesWon = 0;
     netResult = 0;
-    message = '';
     drawResults = [];
-    sortColumn = 'Date';
-    sortOrder = 'asc';
     gamesPlayedMessage = "";
-    sortColumn = null;
-    sortOrder = 'asc';
+    sortColumn = 'Date';
+    sortOrder = 'desc';
   }
 
   // Generate random numbers for selection
   function randomNumbers() {
-    const randomNums = [];
+    const randomNums: number[] = [];
     while (randomNums.length < 5) {
       const random = Math.floor(Math.random() * 49) + 1;
       if (!randomNums.includes(random)) {
@@ -100,25 +80,41 @@
     selectedLuckyNumber = Math.floor(Math.random() * 10) + 1;
   }
 
-  // --- Bitmask Helper Functions ---
-  // Convert an array of numbers to a BigInt bitmask
-  function numbersToBitmask(numbers: number[]): bigint {
-    let mask = 0n;
-    for (const num of numbers) {
-      // Set the (num-1)-th bit (numbers are 1-indexed)
-      mask |= 1n << BigInt(num - 1);
+  // --- Bitmask Helper Functions using two 32-bit integers and lookup ---
+
+  // Precompute a lookup table for popcount of 8-bit numbers
+  const popcountLookup = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) {
+    let count = 0;
+    let v = i;
+    while (v) {
+      count += v & 1;
+      v >>= 1;
     }
-    return mask;
+    popcountLookup[i] = count;
   }
 
-  // Count the number of set bits (population count) in a BigInt
-  function popcount(n: bigint): number {
-    let count = 0;
-    while (n) {
-      count += Number(n & 1n);
-      n >>= 1n;
+  // Count the number of set bits in a 32-bit integer using the lookup table
+  function popcount32(x: number): number {
+    return popcountLookup[x & 0xff] +
+           popcountLookup[(x >>> 8) & 0xff] +
+           popcountLookup[(x >>> 16) & 0xff] +
+           popcountLookup[(x >>> 24) & 0xff];
+  }
+
+  // Convert an array of numbers to a bitmask represented by two 32-bit integers (low and high parts)
+  function numbersToBitmask32(numbers: number[]): { low: number, high: number } {
+    let low = 0;
+    let high = 0;
+    for (const num of numbers) {
+      const index = num - 1;
+      if (index < 32) {
+        low |= 1 << index;
+      } else {
+        high |= 1 << (index - 32);
+      }
     }
-    return count;
+    return { low, high };
   }
 
   // Simulate playing until a positive net result is obtained.
@@ -137,7 +133,7 @@
       calculateResultsOptimized();
       gamesPlayed++;
     }
-    gamesPlayedMessage = `Il vous aurait fallu jouer ${gamesPlayed} grilles Loto différentes pour en obtenir une rentable.`;
+    gamesPlayedMessage = `Il vous aurait fallu jouer ${gamesPlayed} grilles Loto différentes pour en obtenir <u>finalement</u> une rentable.`;
     return gamesPlayed;
   }
 
@@ -155,7 +151,7 @@
     return isNaN(parsed) ? 0 : parsed;
   }
 
-  // Load CSV data on mount from the combined CSV file and precompute bitmasks for each draw
+  // Load CSV data on mount from the combined CSV file and precompute 32-bit bitmasks for each draw
   onMount(async () => {
     try {
       const response = await fetch('/data/loto_combined.csv');
@@ -164,20 +160,21 @@
       const parsedData = semicolonParser.parse(csvText);
 
       lotoData = parsedData
-        .filter(draw => {
+        .filter((draw: { date_de_tirage: string; }) => {
           const drawDate = parseDate(draw.date_de_tirage);
           return drawDate >= new Date('2017-03-06'); // Exclude draws before 2017-03-06
         })
-        .map((draw) => {
+        .map((draw: { combinaison_gagnante_en_ordre_croissant: { split: (arg0: string) => [any, any]; }; date_de_tirage: Date; rapport_du_rang1: string; rapport_du_rang2: string; rapport_du_rang3: string; rapport_du_rang4: string; rapport_du_rang5: string; rapport_du_rang6: string; rapport_du_rang7: string; rapport_du_rang8: string; rapport_du_rang9: string; }) => {
           const [combinaison, chance] = draw.combinaison_gagnante_en_ordre_croissant.split('+');
           const drawNumbers = combinaison.split('-').map(Number);
-          // Precompute the bitmask for the drawn numbers
-          const bitmask = numbersToBitmask(drawNumbers);
+          // Precompute the 32-bit bitmask for the drawn numbers
+          const mask32 = numbersToBitmask32(drawNumbers);
 
           return {
             date: draw.date_de_tirage,
             draw: drawNumbers,
-            bitmask,
+            maskLow: mask32.low,
+            maskHigh: mask32.high,
             chance: +chance,
             gains: {
               rang1: parseGain(draw.rapport_du_rang1),
@@ -203,28 +200,27 @@
     return new Date(`${year}-${month}-${day}`);
   }
 
-  // Optimized calculateResults function using bitmask operations
+  // Optimized calculateResults function using 32-bit bitmask operations and lookup table
   function calculateResultsOptimized() {
     gamesPlayedMessage = "";
     if (selectedNumbers.length !== 5 || selectedLuckyNumber === null) {
-      message = 'Veuillez sélectionner 5 numéros et un numéro chance.';
       return;
     }
     calculatedNumbers = [...selectedNumbers];
     calculatedLuckyNumber = selectedLuckyNumber;
 
-    isLoading = true;
     totalSpent = ticketPrice * lotoData.length;
     totalWon = 0;
     totalGamesWon = 0;
     netResult = 0;
 
-    // Compute bitmask for user's selected numbers
-    const userBitmask = numbersToBitmask(selectedNumbers);
+    // Compute bitmask for user's selected numbers using 32-bit representation
+    const userMask = numbersToBitmask32(selectedNumbers);
 
-    // Process each draw using bitmask AND and popcount for fast matching
+    // Process each draw using bitmask operations and the lookup table for popcount
     drawResults = lotoData.map((draw) => {
-      const matchCount = popcount(userBitmask & draw.bitmask);
+      const matchCount = popcount32(userMask.low & draw.maskLow) +
+                         popcount32(userMask.high & draw.maskHigh);
       const matchingLuckyNumber = (selectedLuckyNumber === draw.chance);
       let gain = 0;
 
@@ -263,29 +259,17 @@
     });
 
     netResult = totalWon - totalSpent;
-    message = `Vous avez dépensé ${totalSpent.toLocaleString('fr-FR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}€ pour jouer, vous avez gagné ${totalGamesWon} fois pour un total de ${totalWon.toLocaleString('fr-FR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}€, votre résultat net est de ${netResult.toLocaleString('fr-FR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}€`;
-
-    isLoading = false;
-    sortColumn = 'Date';
-    sortOrder = 'desc';
     tick().then(() => {
       if (resultsContainer) {
         resultsContainer.scrollIntoView({ behavior: 'smooth' });
       }
     });
+    sortColumn = 'Date';
+    sortOrder = 'desc';
   }
 
   // Standard calculateResults function calls the optimized version
-  async function calculateResults() {
+  function calculateResults() {
     calculateResultsOptimized();
   }
 
@@ -333,7 +317,7 @@
   }
 </script>
 
-<div class="pt-5 max-w-5xl mx-auto space-y-4 px-4">
+<div class="pt-5 pb-8 max-w-5xl mx-auto space-y-4 px-4">
   <Card class="p-6">
     <h1 class="text-2xl font-bold">Simulez vos gains au Loto</h1>
     <p class="text-gray-600">
@@ -367,7 +351,7 @@
   </Card>
 
   <Card class="p-6">
-    <h2 class="text-xl font-semibold mb-2">Choisissez le numéro chance</h2>
+    <h2 class="text-xl font-semibold mb-2">Choisissez le numéro Chance</h2>
     <!-- Responsive grid for lucky numbers -->
     <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-10 gap-2 mb-4">
       {#each luckyNumbers as number}
@@ -380,7 +364,7 @@
         </Button>
       {/each}
     </div>
-    <p class="mb-2">Numéro chance sélectionné :</p>
+    <p class="mb-2">Numéro Chance sélectionné :</p>
     {#if selectedLuckyNumber}
       <span class="inline-block p-2 m-1 border rounded min-w-[40px] text-center border-orange-500">
         {selectedLuckyNumber}
@@ -391,124 +375,159 @@
   <div class="flex flex-col sm:flex-row justify-center items-center space-y-2 sm:space-y-0 sm:space-x-4" bind:this={resultsContainer}>
     <Button
       on:click={calculateResults}
-      disabled={selectedNumbers.length !== 5 || selectedLuckyNumber === null || isLoading}
-      class="px-4 py-2 min-h-[50px]"
+      disabled={selectedNumbers.length !== 5 || selectedLuckyNumber === null}
+      class="px-4 py-2 min-h-[50px] active:scale-95 active:shadow-sm transition-all duration-100"
     >
-      {#if isLoading}
-        Veuillez patienter
-      {:else}
-        Calculer les résultats
-      {/if}
+      Calculer les résultats
     </Button>
     <Button
       variant="outline"
       on:click={resetSelection}
-      class="px-4 py-2 min-h-[50px]"
+      class="px-4 py-2 min-h-[50px] active:scale-95 active:shadow-sm transition-all duration-100"
     >
       Réinitialiser
     </Button>
     <Button
       variant="outline"
       on:click={randomNumbers}
-      class="px-4 py-2 min-h-[50px]"
+      class="px-4 py-2 min-h-[50px] active:scale-95 active:shadow-sm transition-all duration-100"
     >
       Numéros aléatoires
     </Button>
     <Button
-      variant="outline"
       on:click={randomNumbersUntilWin}
-      class="px-4 py-2 min-h-[50px]"
+      class="px-4 py-2 min-h-[50px] active:scale-95 active:shadow-sm transition-all duration-100"
     >
       Jouer jusqu'à gagner
     </Button>
   </div>
 
-  {#if gamesPlayedMessage}
-    <div class="mt-4">
-      <div class="flex items-center justify-start p-4 bg-red-100 text-red-800 border-l-4 border-red-500 shadow-lg rounded-lg">
-        <p class="font-bold text-lg">{gamesPlayedMessage}</p>
-      </div>
-    </div>
-  {/if}
-
-  {#if drawResults.length > 0}
-    <!-- Animated net result display using NumberFlow -->
-    <Card class="mt-4 p-6">
-      <div class="flex items-center justify-center">
+  <!-- Card with game statistics -->
+  <Card class="mt-4 p-6 shadow-lg">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <!-- Total spent amount -->
+      <div class="flex flex-col items-center">
+        <p class="text-gray-600 text-sm">Montant total dépensé</p>
         <NumberFlow
-          value={Math.abs(netResult)}
-          prefix={netResult >= 0 ? '+' : '-'}
+          value={totalSpent}
           format={{ style: 'currency', currency: 'EUR', trailingZeroDisplay: 'stripIfInteger' }}
-          class="text-4xl font-bold"
-          style="color: {netResult >= 0 ? '#34d399' : '#dc2626'};"
+          class="text-2xl sm:text-3xl text-red-500"
           transformTiming={{ duration: 1000, easing: 'ease-in-out' }}
           spinTiming={{ duration: 1000, easing: 'ease-in-out' }}
           opacityTiming={{ duration: 500, easing: 'ease-out' }}
         />
       </div>
-    </Card>
 
-    <div class="mt-4 overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableCell class="font-bold cursor-pointer hover:underline px-4 py-2 text-left text-base" on:click={() => sortBy('Date')}>
-              Date
-              {#if sortColumn === 'Date'}
-                <span class="ml-1">{sortOrder === 'asc' ? '▲' : '▼'}</span>
-              {/if}
-            </TableCell>
-            <TableCell class="font-bold px-4 py-2 text-left text-base">
-              Vos numéros
-            </TableCell>
-            <TableCell class="font-bold px-4 py-2 text-left text-base">
-              Combinaison gagnante
-            </TableCell>
-            <TableCell class="font-bold cursor-pointer hover:underline px-4 py-2 text-left text-base min-w-[120px] whitespace-nowrap" on:click={() => sortBy('Gain')}>
-              Gain
-              {#if sortColumn === 'Gain'}
-                <span class="ml-1">{sortOrder === 'asc' ? '▲' : '▼'}</span>
-              {/if}
-            </TableCell>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {#each drawResults as result}
+      <!-- Total won amount -->
+      <div class="flex flex-col items-center">
+        <p class="text-gray-600 text-sm">Montant total gagné</p>
+        <NumberFlow
+          value={totalWon}
+          format={{ style: 'currency', currency: 'EUR', trailingZeroDisplay: 'stripIfInteger' }}
+          class="text-2xl sm:text-3xl text-green-500"
+          transformTiming={{ duration: 1000, easing: 'ease-in-out' }}
+          spinTiming={{ duration: 1000, easing: 'ease-in-out' }}
+          opacityTiming={{ duration: 500, easing: 'ease-out' }}
+        />
+      </div>
+
+      <!-- Net result with NumberFlow animation -->
+      <div class="flex flex-col items-center">
+        <p class="text-gray-600 text-sm">Résultat net</p>
+        <NumberFlow
+          value={Math.abs(netResult)}
+          prefix={netResult >= 0 ? '+' : '-'}
+          format={{ style: 'currency', currency: 'EUR', trailingZeroDisplay: 'stripIfInteger' }}
+          class="text-2xl sm:text-3xl font-bold"
+          style="color: {netResult >= 0 ? '#10B981' : '#DC2626'};"
+          transformTiming={{ duration: 1000, easing: 'ease-in-out' }}
+          spinTiming={{ duration: 1000, easing: 'ease-in-out' }}
+          opacityTiming={{ duration: 500, easing: 'ease-out' }}
+        />
+      </div>
+    </div>
+  </Card>
+
+  {#if drawResults.length > 0}
+    {#if gamesPlayedMessage}
+      <div class="mt-4">
+        <!-- Main message -->
+        <div class="flex items-center justify-center p-4 bg-red-100 text-red-800 border-l-4 border-red-500 shadow-lg rounded-lg">
+          <p class="font-bold text-lg text-center">{@html gamesPlayedMessage}</p>
+        </div>
+      </div>
+    {/if}
+    <div class="mt-4 mx-2 sm:mx-4">
+      <div class="overflow-x-auto">
+        <Table class="table-auto w-full">
+          <TableHeader>
             <TableRow>
-              <TableCell>{result.date}</TableCell>
-              <TableCell>
-                <div class={`flex ${forceDesktopLayout ? 'flex-row space-x-1' : 'flex flex-col md:flex-row md:space-x-1 space-y-1 md:space-y-0'} items-center`}>
-                  {#each calculatedNumbers as num}
-                    <span class="inline-block p-2 border rounded min-w-[40px] text-center {result.matchingNumbers.includes(num) ? 'bg-green-400 text-white' : ''}">
-                      {num}
-                    </span>
-                  {/each}
-                  <span class="inline-block p-2 border rounded min-w-[40px] text-center border-orange-500 {result.matchingLuckyNumber ? 'bg-green-400 text-white' : ''}">
-                    {calculatedLuckyNumber}
-                  </span>
-                </div>
+              <TableCell
+                class="cursor-pointer hover:underline px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold text-left"
+                on:click={() => sortBy('Date')}
+              >
+                Date
+                {#if sortColumn === 'Date'}
+                  <span class="ml-1">{sortOrder === 'asc' ? '▲' : '▼'}</span>
+                {/if}
               </TableCell>
-              <TableCell>
-                <div class={`flex ${forceDesktopLayout ? 'flex-row space-x-1' : 'flex flex-col md:flex-row md:space-x-1 space-y-1 md:space-y-0'} items-center`}>
-                  {#each result.draw as num}
-                    <span class="inline-block p-2 border rounded min-w-[40px] text-center">
-                      {num}
-                    </span>
-                  {/each}
-                  <span class="inline-block p-2 border rounded min-w-[40px] text-center border-orange-500">
-                    {result.chance}
-                  </span>
-                </div>
+              <TableCell class="px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold text-left">
+                Vos numéros
               </TableCell>
-              <TableCell class="whitespace-nowrap">
-                {result.gain > 0
-                  ? `${result.gain.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€`
-                  : '0€'}
+              <TableCell class="px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold text-left">
+                Combinaison gagnante
+              </TableCell>
+              <TableCell
+                class="cursor-pointer hover:underline px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold text-left whitespace-nowrap"
+                on:click={() => sortBy('Gain')}
+              >
+                Gain
+                {#if sortColumn === 'Gain'}
+                  <span class="ml-1">{sortOrder === 'asc' ? '▲' : '▼'}</span>
+                {/if}
               </TableCell>
             </TableRow>
-          {/each}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {#each drawResults as result}
+              <TableRow>
+                <TableCell class="px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base">
+                  {result.date}
+                </TableCell>
+                <TableCell class="px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base">
+                  <div class={`flex ${forceDesktopLayout ? 'flex-row space-x-1' : 'flex flex-col md:flex-row md:space-x-1 space-y-1 md:space-y-0'} items-center`}>
+                    {#each calculatedNumbers as num}
+                      <span class="inline-block p-1 sm:p-2 border rounded min-w-[32px] sm:min-w-[40px] text-center {result.matchingNumbers.includes(num) ? 'bg-green-400 text-white' : ''}">
+                        {num}
+                      </span>
+                    {/each}
+                    <span class="inline-block p-1 sm:p-2 border rounded min-w-[32px] sm:min-w-[40px] text-center border-orange-500 {result.matchingLuckyNumber ? 'bg-green-400 text-white' : ''}">
+                      {calculatedLuckyNumber}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell class="px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base">
+                  <div class={`flex ${forceDesktopLayout ? 'flex-row space-x-1' : 'flex flex-col md:flex-row md:space-x-1 space-y-1 md:space-y-0'} items-center`}>
+                    {#each result.draw as num}
+                      <span class="inline-block p-1 sm:p-2 border rounded min-w-[32px] sm:min-w-[40px] text-center">
+                        {num}
+                      </span>
+                    {/each}
+                    <span class="inline-block p-1 sm:p-2 border rounded min-w-[32px] sm:min-w-[40px] text-center border-orange-500">
+                      {result.chance}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell class="px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base whitespace-nowrap">
+                  {result.gain > 0
+                    ? `${result.gain.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€`
+                    : '0€'}
+                </TableCell>
+              </TableRow>
+            {/each}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   {/if}
 </div>
