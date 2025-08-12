@@ -1,10 +1,4 @@
-<svelte:head>
-  <!-- Ensure proper scaling on mobile devices -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-</svelte:head>
-
 <script lang="ts">
-  // Import necessary modules and components
   import { onMount, tick } from 'svelte';
   import { dsvFormat } from 'd3-dsv';
   import { Button } from '$lib/components/ui/button';
@@ -14,9 +8,12 @@
     TableCell,
     TableHeader,
     TableRow,
+    TableHead
   } from '$lib/components/ui/table';
   import Card from '$lib/components/ui/card/card.svelte';
   import NumberFlow from '@number-flow/svelte';
+  import { base } from '$app/paths';
+
 
   // Layout and selection variables
   let forceDesktopLayout = false;
@@ -154,7 +151,7 @@
   // Load CSV data on mount from the combined CSV file and precompute 32-bit bitmasks for each draw
   onMount(async () => {
     try {
-      const response = await fetch('/data/loto_combined.csv');
+      const response = await fetch(`${base}/data/loto_combined.csv`);
       const csvText = await response.text();
       const semicolonParser = dsvFormat(';');
       const parsedData = semicolonParser.parse(csvText);
@@ -460,34 +457,52 @@
     <div class="mt-4 mx-2 sm:mx-4">
       <div class="overflow-x-auto">
         <Table class="table-auto w-full">
-          <TableHeader>
-            <TableRow>
-              <TableCell
-                class="cursor-pointer hover:underline px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold text-left"
+        <TableHeader>
+          <TableRow>
+            <!-- Date -->
+            <TableHead
+              aria-sort={sortColumn === 'Date' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
+            >
+              <!-- Use a button for reliable click + keyboard a11y -->
+              <button
+                type="button"
                 on:click={() => sortBy('Date')}
+                class="w-full text-left cursor-pointer hover:underline px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold appearance-none bg-transparent border-0 focus:outline-none"
               >
                 Date
                 {#if sortColumn === 'Date'}
                   <span class="ml-1">{sortOrder === 'asc' ? '▲' : '▼'}</span>
                 {/if}
-              </TableCell>
-              <TableCell class="px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold text-left">
-                Vos numéros
-              </TableCell>
-              <TableCell class="px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold text-left">
-                Combinaison gagnante
-              </TableCell>
-              <TableCell
-                class="cursor-pointer hover:underline px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold text-left whitespace-nowrap"
+              </button>
+            </TableHead>
+
+            <!-- Numéros (non cliquable) -->
+            <TableHead class="px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold text-left">
+              Vos numéros
+            </TableHead>
+
+            <!-- Combinaison gagnante (non cliquable) -->
+            <TableHead class="px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold text-left">
+              Combinaison gagnante
+            </TableHead>
+
+            <!-- Gain -->
+            <TableHead
+              aria-sort={sortColumn === 'Gain' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
+            >
+              <button
+                type="button"
                 on:click={() => sortBy('Gain')}
+                class="w-full text-left cursor-pointer hover:underline px-1 sm:px-2 py-1 sm:py-2 text-xs sm:text-sm md:text-base font-bold whitespace-nowrap appearance-none bg-transparent border-0 focus:outline-none"
               >
                 Gain
                 {#if sortColumn === 'Gain'}
                   <span class="ml-1">{sortOrder === 'asc' ? '▲' : '▼'}</span>
                 {/if}
-              </TableCell>
-            </TableRow>
-          </TableHeader>
+              </button>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
           <TableBody>
             {#each drawResults as result}
               <TableRow>
