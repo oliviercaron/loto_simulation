@@ -3,7 +3,9 @@
 [![Deploy](https://github.com/oliviercaron/loto_simulation/actions/workflows/deploy.yml/badge.svg)](https://github.com/oliviercaron/loto_simulation/actions/workflows/deploy.yml)  
 **Démo en ligne :** https://oliviercaron.github.io/loto_simulation/
 
-![Aperçu de l’application](static/demo/simulation_loto.gif)
+<p align="center">
+  <img src="static/demo/simulation_loto.gif" alt="Simulation Loto" width="50%">
+</p>
 
 Une petite appli SvelteKit pour simuler vos gains au Loto 🇫🇷 : choisissez 5 numéros + 1 numéro Chance, et voyez ce que ça aurait donné sur tous les tirages depuis 2017. C’est rapide (calculs optimisés), simple, et 100 % côté client.
 
