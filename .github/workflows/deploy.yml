@@ -28,8 +28,7 @@ jobs:
       - name: Build
         env:
           NODE_ENV: production
-          # Must match your repository name
-          BASE_PATH: /loto-gagnants
+          BASE_PATH: /loto_simulation
         run: npm run build
 
       - name: Upload artifact
