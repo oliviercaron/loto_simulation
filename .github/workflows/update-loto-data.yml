@@ -14,7 +14,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # === MODIFICATION 1 : Le token est mis ICI ===
           token: ${{ secrets.ACTIONS_PAT }}
 
       # 2. Scrape la page FDJ, télécharge et dézippe le fichier
