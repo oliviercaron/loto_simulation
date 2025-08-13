@@ -1,9 +1,26 @@
 name: Deploy to GitHub Pages
 
 on:
+  # Lancement manuel possible
+  workflow_dispatch:
+
+  # Déclenchement quand le workflow d’update se termine
+  workflow_run:
+    workflows: ["Mise à jour des données Loto"]  # doit matcher exactement le champ 'name:' du workflow d’update
+    types: [completed]
+
+  # (Optionnel) Déclenchement aussi sur push manuel (ex. quand je pousse du code)
   push:
     branches: [ main ]
-  workflow_dispatch:
+    # Filtre pour ne pas déployer sur tout et n’importe quoi
+    paths:
+      - 'static/data/loto_combined.csv'
+      - 'src/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'yarn.lock'
+      - 'vite.config.*'
+      - 'svelte.config.*'
 
 permissions:
   contents: read
@@ -12,6 +29,8 @@ permissions:
 
 jobs:
   build:
+    # Si on vient de workflow_run, je ne déploie que si le workflow d’update a réussi
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -31,6 +50,7 @@ jobs:
           BASE_PATH: /loto_simulation
         run: npm run build
 
+      # Upload de l'artefact Pages (répertoire 'build' généré par SvelteKit/Vite)
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
