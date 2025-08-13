@@ -4,52 +4,70 @@ on:
   # Lancement manuel depuis l’onglet "Actions"
   workflow_dispatch:
 
-  # Exécution automatique tous les lundis à 5h du matin (heure de Paris)
-  # Note : le cron est en UTC, donc 5h Paris = 3h UTC en été
+  # Lancement automatique chaque lundi à 5h du matin heure de Paris
+  # (cron en UTC → 3h UTC en été)
   schedule:
     - cron: '0 3 * * 1'
 
-# Autorisations nécessaires pour pouvoir pousser des commits dans le dépôt
+# Autorisations minimales nécessaires pour pouvoir pousser le fichier CSV mis à jour
 permissions:
   contents: write
+
+# Empêcher que deux exécutions se chevauchent sur la même branche
+# et annuler la précédente si un nouveau run est déclenché
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   update-data:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # Arrêt du job après 15 minutes si blocage
 
     steps:
-      # 1) Télécharger le code du dépôt privé
-      # GitHub fournit automatiquement un GITHUB_TOKEN pour ça,
-      # donc pas besoin d’utiliser un PAT.
+      # 1) Récupérer le dépôt privé avec le GITHUB_TOKEN fourni automatiquement
       - name: Récupérer le dépôt
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # Historique minimal pour plus de rapidité
+          fetch-depth: 1  # Clonage rapide, historique minimal
 
-      # 2) Télécharger et décompresser les données Loto depuis le site de la FDJ
-      - name: Télécharger et dézipper les données Loto
+      # 2) Télécharger et dézipper les données FDJ avec retry en cas d’échec réseau
+      - name: Télécharger et dézipper les données Loto (avec retry)
         shell: bash
         run: |
-          PAGE_HISTORIQUE="https://www.fdj.fr/jeux-de-tirage/loto/historique"
-          URL_TELECHARGEMENT=$(curl -s "$PAGE_HISTORIQUE" \
-            | grep -o 'https://www\.sto\.api\.fdj\.fr/anonymous/service-draw-info/v3/documentations/[^"]*' \
-            | head -n 1)
-          if [ -z "$URL_TELECHARGEMENT" ]; then
-            echo "ERREUR : lien de téléchargement introuvable." >&2
-            exit 1
-          fi
-          echo "Lien trouvé : $URL_TELECHARGEMENT"
-          curl -L -o loto_new.zip "$URL_TELECHARGEMENT"
-          unzip -o loto_new.zip
+          set -euo pipefail
+          PAGE="https://www.fdj.fr/jeux-de-tirage/loto/historique"
 
-      # 3) Installer l’environnement R
+          # 3 tentatives avec pause croissante
+          for i in 1 2 3; do
+            URL=$(curl -s "$PAGE" \
+              | grep -o 'https://www\.sto\.api\.fdj\.fr/anonymous/service-draw-info/v3/documentations/[^"]*' \
+              | head -n 1 || true)
+
+            if [ -n "${URL:-}" ]; then
+              echo "Lien trouvé : $URL"
+              if curl -L --fail -o loto_new.zip "$URL"; then
+                unzip -o loto_new.zip
+                break
+              fi
+            fi
+
+            echo "Tentative $i échouée, nouvel essai..." >&2
+            sleep $((i*i))
+          done
+
+          # Vérification finale
+          [ -f loto_new.zip ] || { echo "ERREUR : téléchargement impossible après 3 tentatives" >&2; exit 1; }
+
+      # 3) Installer R (utilisation de RSPM pour accélérer l’installation des paquets)
       - name: Installer R
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: '4.2'
+          use-public-rspm: true
 
-      # 4) Installer les dépendances R nécessaires
-      - name: Installer les dépendances R
+      # 4) Installer les dépendances R avec mise en cache
+      - name: Installer les dépendances R (avec cache)
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           packages: |
@@ -58,15 +76,27 @@ jobs:
             any::lubridate
           cache: true
 
-      # 5) Lancer le script R qui combine les données
+      # 5) Lancer le script R qui produit loto_combined.csv à la racine
       - name: Exécuter le script R
         run: Rscript combine_script.R
 
-      # 6) Commiter et pousser les modifications si le fichier a changé
+      # 6) Déplacer le fichier généré dans static/data pour remplacer l’existant
+      - name: Déplacer le fichier combiné dans static/data
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -f "loto_combined.csv" ] || { echo "ERREUR : loto_combined.csv introuvable à la racine" >&2; exit 1; }
+          mkdir -p static/data
+          mv -f "loto_combined.csv" "static/data/loto_combined.csv"
+          # Afficher les fichiers pour vérifier
+          git status --porcelain || true
+          ls -l static/data || true
+
+      # 7) Commit et push uniquement si le fichier a changé
       - name: Commit et push si changement
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "📊 Chore: Mise à jour des données Loto"
-          file_pattern: 'loto_combined.csv'
+          commit_message: "📊 Chore: mise à jour des données Loto"
+          file_pattern: 'static/data/loto_combined.csv'
           commit_user_name: "GitHub Actions Bot"
           commit_user_email: "actions@github.com"
