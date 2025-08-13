@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Déploiement du site sur GitHub Pages
 
 on:
   # Lancement manuel possible
