@@ -20,12 +20,13 @@ jobs:
       # 2. Scrape la page FDJ, télécharge et dézippe le fichier
       - name: Download and Unzip Loto Data
         run: |
-          # URL de la page contenant le lien de téléchargement
           HISTORY_PAGE_URL="https://www.fdj.fr/jeux-de-tirage/loto/historique"
 
-          # Trouve le lien de téléchargement du zip dans le code HTML de la page
-          # et le stocke dans la variable DOWNLOAD_URL
-          DOWNLOAD_URL=$(curl -s $HISTORY_PAGE_URL | grep -o 'https://www.sto.api.fdj.fr/anonymous/service-draw-info/v3/documentations/[^"]*')
+          # ANCIENNE LIGNE (qui trouvait trop de liens) :
+          # DOWNLOAD_URL=$(curl -s $HISTORY_PAGE_URL | grep -o 'https://www.sto.api.fdj.fr/anonymous/service-draw-info/v3/documentations/[^"]*')
+          
+          # NOUVELLE LIGNE CORRIGÉE (qui ne garde que le premier lien) :
+          DOWNLOAD_URL=$(curl -s $HISTORY_PAGE_URL | grep -o 'https://www.sto.api.fdj.fr/anonymous/service-draw-info/v3/documentations/[^"]*' | head -n 1)
 
           if [ -z "$DOWNLOAD_URL" ]; then
             echo "Erreur: Impossible de trouver le lien de téléchargement."
@@ -34,10 +35,7 @@ jobs:
 
           echo "Lien trouvé : $DOWNLOAD_URL"
           
-          # Télécharge le fichier zip
           curl -L -o loto_new.zip "$DOWNLOAD_URL"
-          
-          # Dézippe le fichier (le -o écrase les anciens fichiers avec le même nom)
           unzip -o loto_new.zip
           echo "Fichier dézippé avec succès."
 
@@ -62,6 +60,15 @@ jobs:
       # 5. Sauvegarde les changements dans le dépôt si le fichier a été modifié
       - name: Commit and push if changes
         uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          # Utilise le Personal Access Token pour que ce commit puisse
+          # déclencher d'autres workflows (comme celui du déploiement).
+          token: ${{ secrets.ACTIONS_PAT }}
+          
+          commit_message: "📊 Chore: Mise à jour des données Loto"
+          file_pattern: 'loto_combined.csv'
+          commit_user_name: "GitHub Actions Bot"
+          commit_user_email: "actions@github.com"
         with:
           commit_message: "📊 Chore: Mise à jour des données Loto"
           file_pattern: 'loto_combined.csv'
