@@ -1,0 +1,67 @@
+name: Mise à jour des données Loto
+
+on:
+  # Permet de lancer ce workflow manuellement depuis l'onglet "Actions" de GitHub
+  workflow_dispatch:
+
+  # Exécute le workflow automatiquement tous les lundis à 5h du matin
+  schedule:
+    - cron: '0 5 * * 1'
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Récupère le code de ton dépôt
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Scrape la page FDJ, télécharge et dézippe le fichier
+      - name: Download and Unzip Loto Data
+        run: |
+          HISTORY_PAGE_URL="https://www.fdj.fr/jeux-de-tirage/loto/historique"
+          # Trouve le premier lien de téléchargement sur la page
+          DOWNLOAD_URL=$(curl -s $HISTORY_PAGE_URL | grep -o 'https://www.sto.api.fdj.fr/anonymous/service-draw-info/v3/documentations/[^"]*' | head -n 1)
+
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "Erreur: Impossible de trouver le lien de téléchargement."
+            exit 1
+          fi
+
+          echo "Lien trouvé : $DOWNLOAD_URL"
+          
+          # Télécharge et dézippe le fichier
+          curl -L -o loto_new.zip "$DOWNLOAD_URL"
+          unzip -o loto_new.zip
+          echo "Fichier dézippé avec succès."
+
+      # 3. Met en place l'environnement R
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.2'
+
+      - name: Install R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages:
+            any::readr
+            any::dplyr
+            any::lubridate
+
+      # 4. Exécute le script R pour combiner les données
+      - name: Run R script
+        run: Rscript combine_script.R
+
+      # 5. Sauvegarde les changements dans le dépôt si le fichier a été modifié
+      - name: Commit and push if changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          # Utilise le Personal Access Token pour que ce commit puisse
+          # déclencher d'autres workflows (comme celui du déploiement).
+          token: ${{ secrets.ACTIONS_PAT }}
+          commit_message: "📊 Chore: Mise à jour des données Loto"
+          file_pattern: 'loto_combined.csv'
+          commit_user_name: "GitHub Actions Bot"
+          commit_user_email: "actions@github.com"
