@@ -1,56 +1,69 @@
 name: Mise à jour des données Loto
 
 on:
+  # Lancement manuel depuis l’onglet "Actions"
   workflow_dispatch:
+
+  # Exécution automatique tous les lundis à 5h du matin (heure de Paris)
+  # Note : le cron est en UTC, donc 5h Paris = 3h UTC en été
   schedule:
-    - cron: '0 5 * * 1'
+    - cron: '0 3 * * 1'
+
+# Autorisations nécessaires pour pouvoir pousser des commits dans le dépôt
+permissions:
+  contents: write
 
 jobs:
   update-data:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Récupère le code du dépôt EN UTILISANT LE PAT
-      - name: Checkout repository
+      # 1) Télécharger le code du dépôt privé
+      # GitHub fournit automatiquement un GITHUB_TOKEN pour ça,
+      # donc pas besoin d’utiliser un PAT.
+      - name: Récupérer le dépôt
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.ACTIONS_PAT }}
+          fetch-depth: 1  # Historique minimal pour plus de rapidité
 
-      # 2. Scrape la page FDJ, télécharge et dézippe le fichier
-      - name: Download and Unzip Loto Data
+      # 2) Télécharger et décompresser les données Loto depuis le site de la FDJ
+      - name: Télécharger et dézipper les données Loto
+        shell: bash
         run: |
-          HISTORY_PAGE_URL="https://www.fdj.fr/jeux-de-tirage/loto/historique"
-          DOWNLOAD_URL=$(curl -s $HISTORY_PAGE_URL | grep -o 'https://www.sto.api.fdj.fr/anonymous/service-draw-info/v3/documentations/[^"]*' | head -n 1)
-          if [ -z "$DOWNLOAD_URL" ]; then
-            echo "Erreur: Impossible de trouver le lien de téléchargement."
+          PAGE_HISTORIQUE="https://www.fdj.fr/jeux-de-tirage/loto/historique"
+          URL_TELECHARGEMENT=$(curl -s "$PAGE_HISTORIQUE" \
+            | grep -o 'https://www\.sto\.api\.fdj\.fr/anonymous/service-draw-info/v3/documentations/[^"]*' \
+            | head -n 1)
+          if [ -z "$URL_TELECHARGEMENT" ]; then
+            echo "ERREUR : lien de téléchargement introuvable." >&2
             exit 1
           fi
-          echo "Lien trouvé : $DOWNLOAD_URL"
-          curl -L -o loto_new.zip "$DOWNLOAD_URL"
+          echo "Lien trouvé : $URL_TELECHARGEMENT"
+          curl -L -o loto_new.zip "$URL_TELECHARGEMENT"
           unzip -o loto_new.zip
-          echo "Fichier dézippé avec succès."
 
-      # 3. Met en place l'environnement R
-      - name: Setup R
+      # 3) Installer l’environnement R
+      - name: Installer R
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: '4.2'
 
-      - name: Install R dependencies
+      # 4) Installer les dépendances R nécessaires
+      - name: Installer les dépendances R
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          packages:
+          packages: |
             any::readr
             any::dplyr
             any::lubridate
           cache: true
 
-      # 4. Exécute le script R pour combiner les données
-      - name: Run R script
+      # 5) Lancer le script R qui combine les données
+      - name: Exécuter le script R
         run: Rscript combine_script.R
 
-      # 5. Sauvegarde les changements dans le dépôt si le fichier a été modifié
-      - name: Commit and push if changes
+      # 6) Commiter et pousser les modifications si le fichier a changé
+      - name: Commit et push si changement
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "📊 Chore: Mise à jour des données Loto"
