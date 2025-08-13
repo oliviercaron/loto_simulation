@@ -49,6 +49,7 @@ jobs:
             any::readr
             any::dplyr
             any::lubridate
+          cache: true
 
       # 4. Exécute le script R pour combiner les données
       - name: Run R script
