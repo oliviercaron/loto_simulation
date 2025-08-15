@@ -1,79 +1,153 @@
-# Load required libraries
-library(readr)      # For read_csv2() and write_csv2()
-library(dplyr)      # For data manipulation
-library(lubridate)  # For date parsing
+# Charger les bibliothèques nécessaires
+library(readr)      # Pour read_csv2() et write_csv2()
+library(dplyr)      # Pour la manipulation des données
+library(lubridate)  # Pour le traitement des dates
 
-# Read the reference file to obtain the target column names and formatting
-ref_file <- "loto_201911.csv"
-ref <- read_csv2(ref_file, col_types = cols(.default = "c"))
-# Define the target columns required by your Svelte site
-target_cols <- c("date_de_tirage", 
-                 "combinaison_gagnante_en_ordre_croissant",
-                 "rapport_du_rang1", "rapport_du_rang2", "rapport_du_rang3",
-                 "rapport_du_rang4", "rapport_du_rang5", "rapport_du_rang6",
-                 "rapport_du_rang7", "rapport_du_rang8", "rapport_du_rang9")
+# Définir les colonnes cibles requises par le site Svelte
+colonnes_cibles <- c("date_de_tirage", 
+                     "combinaison_gagnante_en_ordre_croissant",
+                     "rapport_du_rang1", "rapport_du_rang2", "rapport_du_rang3",
+                     "rapport_du_rang4", "rapport_du_rang5", "rapport_du_rang6",
+                     "rapport_du_rang7", "rapport_du_rang8", "rapport_du_rang9")
 
-# Define a function to process and adapt each CSV file
-process_file <- function(file) {
-  # Read the CSV file (semicolon as delimiter)
-  df <- read_csv2(file, col_types = cols(.default = "c"))
+# Définir une fonction pour traiter chaque fichier CSV
+traiter_fichier <- function(fichier) {
+  chemin_fichier <- file.path(repertoire_donnees, fichier)
+  cat("📁 Traitement de:", chemin_fichier, "\n")
   
-  # Remove any extra whitespace from column names
-  colnames(df) <- trimws(colnames(df))
-  
-  # ---- File-specific adjustments ----
-  if (file == "loto.csv") {
-    # In loto.csv, rename "numero_joker" to "numero_chance" if it exists
-    if ("numero_joker" %in% colnames(df)) {
-      colnames(df)[colnames(df) == "numero_joker"] <- "numero_chance"
+  tryCatch({
+    # Lire le fichier CSV (point-virgule comme délimiteur)
+    df <- read_csv2(chemin_fichier, col_types = cols(.default = "c"), 
+                    skip_empty_rows = TRUE, 
+                    locale = locale(encoding = "UTF-8"))
+    
+    cat("   Lignes lues:", nrow(df), "\n")
+    
+    # Supprimer les espaces des noms de colonnes
+    colnames(df) <- trimws(colnames(df))
+    
+    # Supprimer les colonnes vides (causées par les point-virgules de fin)
+    colonnes_vides <- which(colnames(df) == "" | is.na(colnames(df)))
+    if (length(colonnes_vides) > 0) {
+      df <- df[, -colonnes_vides, drop = FALSE]
+      cat("   Supprimé", length(colonnes_vides), "colonnes vides\n")
     }
-    # Remove extra columns not needed in the final output
-    extra_cols <- c("1er_ou_2eme_tirage", "boule_6", "boule_complementaire")
-    df <- df[, !(colnames(df) %in% extra_cols), drop = FALSE]
-  }
-  # ------------------------------------
-  
-  # Add any missing target columns with NA values
-  missing_cols <- setdiff(target_cols, colnames(df))
-  if (length(missing_cols) > 0) {
-    for (col in missing_cols) {
-      df[[col]] <- NA
+    
+    # Vérifier les colonnes importantes
+    colonnes_presentes <- intersect(colonnes_cibles, colnames(df))
+    if (length(colonnes_presentes) == 0) {
+      warning("⚠️  Aucune colonne cible trouvée dans ", fichier)
     }
-  }
-  
-  # Keep only the target columns
-  df <- df[, target_cols, drop = FALSE]
-  
-  return(df)
+    
+    # Ajouter les colonnes cibles manquantes avec des valeurs NA
+    colonnes_manquantes <- setdiff(colonnes_cibles, colnames(df))
+    if (length(colonnes_manquantes) > 0) {
+      for (col in colonnes_manquantes) {
+        df[[col]] <- NA
+      }
+      cat("   Ajouté", length(colonnes_manquantes), "colonnes manquantes\n")
+    }
+    
+    # Garder seulement les colonnes cibles
+    df <- df[, colonnes_cibles, drop = FALSE]
+    
+    # Supprimer les lignes complètement vides
+    df <- df %>% filter(!if_all(everything(), ~ is.na(.) | . == ""))
+    
+    cat("   Lignes finales:", nrow(df), "\n")
+    return(df)
+    
+  }, error = function(e) {
+    cat("❌ Erreur avec", chemin_fichier, ":", e$message, "\n")
+    return(NULL)
+  })
 }
 
-# List all CSV files in the working directory
-files <- list.files(pattern = "\\.csv$")
+# Définir le répertoire des données
+repertoire_donnees <- "static/data"
 
-# Process each file and combine them into one dataframe
-df_list <- lapply(files, process_file)
-combined_df <- bind_rows(df_list)
+# Lister les fichiers CSV existants dans static/data
+fichiers_existants <- list.files(repertoire_donnees, pattern = "\\.csv$", full.names = FALSE)
+cat("📂 Fichiers CSV dans", repertoire_donnees, ":", paste(fichiers_existants, collapse = ", "), "\n")
 
-# Remove rows that are entirely NA in the target columns,
-# and remove duplicate rows (only one row per unique draw)
-combined_df <- combined_df %>% 
-  filter(!if_all(all_of(target_cols), ~ is.na(.) | . == "")) %>%
+# Chercher aussi les nouveaux fichiers CSV à la racine (dézippés)
+nouveaux_fichiers <- list.files(".", pattern = "\\.csv$", full.names = FALSE)
+nouveaux_fichiers <- nouveaux_fichiers[nouveaux_fichiers != "loto_combined.csv"] # Exclure notre fichier de sortie
+
+if (length(nouveaux_fichiers) > 0) {
+  cat("📥 Nouveaux fichiers trouvés à la racine:", paste(nouveaux_fichiers, collapse = ", "), "\n")
+  # Copier vers static/data pour traitement
+  for (fichier in nouveaux_fichiers) {
+    chemin_dest <- file.path(repertoire_donnees, fichier)
+    if (!file.exists(chemin_dest)) {
+      dir.create(repertoire_donnees, recursive = TRUE, showWarnings = FALSE)
+      file.copy(fichier, chemin_dest)
+      cat("   Copié", fichier, "vers", repertoire_donnees, "\n")
+    }
+  }
+}
+
+# Tous les fichiers disponibles pour traitement
+tous_fichiers <- unique(c(fichiers_existants, nouveaux_fichiers))
+cat("📋 Total des fichiers disponibles:", paste(tous_fichiers, collapse = ", "), "\n")
+
+# Exclure les anciens fichiers sans numero_chance + le fichier de sortie précédent
+fichiers_exclus <- c("loto.csv", "nouveau_loto.csv", "loto_combined.csv")
+fichiers <- tous_fichiers[!tous_fichiers %in% fichiers_exclus]
+
+if (length(fichiers_exclus[fichiers_exclus %in% tous_fichiers]) > 0) {
+  cat("🚫 Fichiers exclus:", paste(fichiers_exclus[fichiers_exclus %in% tous_fichiers], collapse = ", "), "\n")
+}
+
+if (length(fichiers) == 0) {
+  stop("❌ Aucun fichier CSV valide trouvé !")
+}
+
+cat("✅ Fichiers à traiter:", paste(fichiers, collapse = ", "), "\n\n")
+
+# Traiter chaque fichier et les combiner en un seul dataframe
+liste_df <- lapply(fichiers, traiter_fichier)
+
+# Filtrer les résultats NULL (fichiers en erreur)
+liste_df <- liste_df[!sapply(liste_df, is.null)]
+
+if (length(liste_df) == 0) {
+  stop("❌ Aucun fichier n'a pu être traité avec succès !")
+}
+
+# Combiner tous les dataframes
+df_combine <- bind_rows(liste_df)
+cat("\n📊 Total des lignes avant nettoyage:", nrow(df_combine), "\n")
+
+# Supprimer les lignes entièrement NA et les doublons
+df_combine <- df_combine %>% 
+  filter(!if_all(all_of(colonnes_cibles), ~ is.na(.) | . == "")) %>%
   distinct()
 
-# Convert the "date_de_tirage" column to a Date object.
-# This handles both "dd/mm/yyyy" and "YYYYMMDD" formats.
-# Then, reformat it as "dd/mm/yyyy" to match the reference.
-combined_df <- combined_df %>%
-  mutate(date_parsed = if_else(grepl("/", date_de_tirage),
-                               as.Date(date_de_tirage, format = "%d/%m/%Y"),
-                               as.Date(date_de_tirage, format = "%Y%m%d"))) %>%
-  arrange(desc(date_parsed)) %>%
-  mutate(date_de_tirage = if_else(!is.na(date_parsed),
-                                  format(date_parsed, "%d/%m/%Y"),
-                                  date_de_tirage)) %>%
-  select(-date_parsed)
+cat("📊 Lignes après déduplication:", nrow(df_combine), "\n")
 
-combined_df <- combined_df %>% distinct(date_de_tirage, .keep_all = TRUE)
+# Convertir et formater les dates
+df_combine <- df_combine %>%
+  mutate(date_analysee = case_when(
+    grepl("/", date_de_tirage) ~ as.Date(date_de_tirage, format = "%d/%m/%Y"),
+    grepl("^[0-9]{8}$", date_de_tirage) ~ as.Date(date_de_tirage, format = "%Y%m%d"),
+    TRUE ~ NA_Date_
+  )) %>%
+  filter(!is.na(date_analysee)) %>%  # Supprimer les dates non valides
+  arrange(desc(date_analysee)) %>%
+  mutate(date_de_tirage = format(date_analysee, "%d/%m/%Y")) %>%
+  select(-date_analysee)
 
-# Write the final combined dataframe to a CSV file using semicolon as delimiter
-write_csv2(combined_df, "loto_combined.csv")
+# Supprimer les dates dupliquées (garder la plus récente)
+df_combine <- df_combine %>% distinct(date_de_tirage, .keep_all = TRUE)
+
+cat("📊 Lignes finales:", nrow(df_combine), "\n")
+
+# Vérifier qu'on a des données
+if (nrow(df_combine) == 0) {
+  stop("❌ Aucune donnée valide après traitement !")
+}
+
+# Écrire le fichier final
+write_csv2(df_combine, "loto_combined.csv")
+cat("✅ Données sauvées dans loto_combined.csv\n")
