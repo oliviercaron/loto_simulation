@@ -61,7 +61,7 @@ npm run preview
 
 ---
 
-## ⚙️ CI/CD (très bref)
+## ⚙️ CI/CD
 
 ### Update des données → commit auto
 `.github/workflows/update-loto-data.yml`  
