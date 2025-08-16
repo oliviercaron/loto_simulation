@@ -264,7 +264,7 @@ export const lotoActions = {
       selectedNumbers.set(winningNumbers);
       selectedLuckyNumber.set(winningLuckyNumber);
       this.calculateResults();
-      gamesPlayedMessage.set(`Il vous aurait fallu jouer <b>${gamesPlayed.toLocaleString('fr-FR')}</b> grilles pour en obtenir une rentable.`);
+      gamesPlayedMessage.set(`Il vous aurait fallu jouer <b>${gamesPlayed.toLocaleString('fr-FR')}</b> grilles pour en obtenir <u>finalement une</u> rentable.`);
     } else {
       gamesPlayedMessage.set(`Aucune grille rentable trouvée après <b>${maxAttempts.toLocaleString('fr-FR')}</b> essais.`);
     }
