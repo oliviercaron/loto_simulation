@@ -1,94 +1,134 @@
 # 🎯 Simulation Loto (SvelteKit)
 
-[![Deploy](https://github.com/oliviercaron/loto_simulation/actions/workflows/deploy.yml/badge.svg)](https://github.com/oliviercaron/loto_simulation/actions/workflows/deploy.yml)  
-**Démo en ligne :** https://oliviercaron.github.io/loto_simulation/
+[![Mise à jour des données](https://github.com/oliviercaron/loto_simulation/actions/workflows/update-loto-data.yml/badge.svg)](https://github.com/oliviercaron/loto_simulation/actions/workflows/update-loto-data.yml)
+[![Déploiement](https://github.com/oliviercaron/loto_simulation/actions/workflows/deploy.yml/badge.svg)](https://github.com/oliviercaron/loto_simulation/actions/workflows/deploy.yml)
+
+**Démo :** https://oliviercaron.github.io/loto_simulation/
 
 <p align="center">
   <img src="static/demo/simulation_loto.gif" alt="Simulation Loto" width="60%">
 </p>
 
-Une petite appli SvelteKit pour simuler vos gains au Loto 🇫🇷 : choisissez 5 numéros + 1 numéro Chance, et voyez ce que ça aurait donné sur tous les tirages depuis 2017. C’est rapide (calculs optimisés), simple, et 100 % côté client.
+Appli **SvelteKit** pour simuler des gains au **Loto 🇫🇷** : je choisis 5 numéros + 1 numéro Chance et je vois ce que ça aurait donné depuis 2017. 100 % côté client, rapide.
 
 ---
 
 ## ✨ Fonctionnalités
 
-- Sélection de **5 numéros** et du **numéro Chance**
-- Bouton **“Numéros aléatoires”** et **“Jouer jusqu’à gagner”**
+- Sélection de **5 numéros** + **numéro Chance**
+- Boutons **“Numéros aléatoires”** et **“Jouer jusqu’à gagner”**
 - Calcul sur **tous les tirages** (depuis 2017-03-06)
-- **Tri** par *Date* ou *Gain* (asc/desc)
-- Statistiques : **dépensé**, **gagné**, **résultat net**
-- Chargement local d’un CSV (`static/data/loto_combined.csv`) — rien n’est envoyé côté serveur
+- **Tri** par *Date* / *Gain* (asc/desc)
+- Stats : **dépensé**, **gagné**, **résultat net**
+- Lit `static/data/loto_combined.csv` (séparateur `;`)
+- **Prix du ticket** utilisé : **2,20 €** (modifiable)
 
-> ⚠️ **Disclaimer** : Projet de simulation à but informatif. Non affilié à la FDJ. Aucune garantie. Jouez avec modération.
-
----
-
-## 🧠 Comment ça marche
-
-- Les données sont lues depuis `static/data/loto_combined.csv` (séparateur `;`) via **d3-dsv**.
-- Les comparaisons sont accélérées avec des **bitmasks 32 bits** → calculs très rapides.
-- Prix d’un ticket utilisé dans la simulation : **2,20 €** (modifiable dans le code).
+> ⚠️ Simulation à but informatif. Non affilié à la FDJ. Aucune garantie. Jouez avec modération.
 
 ---
 
-## 🚀 Lancer en local
+## 🔢 Calcul des gains (résumé)
 
-### Prérequis
-- Node.js **20** recommandé
+- Chaque tirage du CSV fournit les montants `rapport_du_rang1…9`.  
+- Pour une grille donnée :
+  1. On compte le **nombre de bons numéros** via un **bitmask** (AND + *popcount*), puis on vérifie le **numéro Chance**.
+  2. On déduit le **rang** (ex. 5+Chance → rang1, 5 sans Chance → rang2, etc.) et on prend le **montant** correspondant dans le tirage.
+- **Dépensé** = `nombre_de_tirages_considerés × 2,20 €`.  
+- **Résultat net** = `total_gagné − dépensé`.
 
-### Installation & dev
-    npm ci
-    npm run dev
-
-### Build statique + preview
-    npm run build
-    npm run preview
-
-L’appli est pré-rendue (**prerender**) et utilisable en hébergement statique (GitHub Pages).
+> Pour changer le prix : `src/lib/stores/lotoStore.ts` → `TICKET_PRICE = 2.2`.
 
 ---
 
-## 🌐 Déploiement (GitHub Pages)
+## 🧠 Données
 
-- Adapter : **@sveltejs/adapter-static** avec fallback `404.html`
-- Base path configuré pour ce repo : **`/loto_simulation`**
-- Workflow : `.github/workflows/deploy.yml` publie sur GitHub Pages à chaque push sur `main`
+- Fichier **unique** consommé : `static/data/loto_combined.csv` (UTF-8, `;`).
+- Colonnes : `date_de_tirage`, `combinaison_gagnante_en_ordre_croissant`, `rapport_du_rang1…9`.
 
-URL de prod : **https://oliviercaron.github.io/loto_simulation/**
+---
+
+## 🚀 Démarrage
+
+**Prérequis** : Node.js **20**
+
+```bash
+npm ci
+npm run dev
+# build statique + preview :
+npm run build
+npm run preview
+```
+
+---
+
+## ⚙️ CI/CD
+
+### Update des données → commit auto
+`.github/workflows/update-loto-data.yml`  
+- **Quand** : lun/mer/sam **20:00 UTC** (≈ 22:00 Paris été / 21:00 hiver) + manuel.  
+- **Fait** : télécharge, combine via **R**, déplace vers `static/data/loto_combined.csv`, **commit si changement**.  
+- **Sécurité** : `GITHUB_TOKEN`, `permissions: contents: write`, `concurrency`, `timeout`.
+
+### Déploiement GitHub Pages
+`.github/workflows/deploy.yml`  
+- **Quand** : au **`workflow_run`** (après succès de l’update) et/ou sur **push** `main`.  
+- **Fait** : build **Node 20** (`BASE_PATH=/loto_simulation`), upload artefact, **publish**.
+
+**Prod** : https://oliviercaron.github.io/loto_simulation/
 
 ---
 
 ## 📂 Arborescence utile
 
-    static/
-      ├─ data/
-      │   └─ loto_combined.csv
-      └─ demo/
-          └─ simulation_loto.gif   ← le GIF du README
-    src/
-      └─ routes/
-          ├─ +layout.ts            (prerender = true)
-          └─ +page.svelte          (logique UI + calcul)
+```text
+static/
+  ├─ data/
+  │   ├─ loto_combined.csv        # fichier consommé par l’app
+  │   └─ old/                     # archives CSV (local)
+  └─ demo/
+      └─ simulation_loto.gif      # GIF du README
+
+src/
+  ├─ lib/
+  │   ├─ components/              # UI (sélecteurs, table, cartes…)
+  │   ├─ stores/
+  │   │   └─ lotoStore.ts         # sélection, calculs, tri, stats (TICKET_PRICE ici)
+  │   ├─ types/
+  │   │   └─ lotoTypes.ts         # types TS des données
+  │   └─ utils/
+  │       └─ lotoUtils.ts         # bitmasks 2×32, popcount, parsing, random
+  └─ routes/
+      ├─ +layout.ts               # prerender = true
+      ├─ +layout.svelte           # layout racine
+      └─ +page.svelte             # UI principale
+
+.github/
+  └─ workflows/
+      ├─ update-loto-data.yml     # maj données → static/data/loto_combined.csv
+      └─ deploy.yml               # build + publication GitHub Pages
+
+combine_script.R                  # combine les CSV → loto_combined.csv (puis déplacé)
+```
 
 ---
 
 ## 🛠️ Stack
 
-- **SvelteKit** + **Vite**
-- **Tailwind CSS**
-- **d3-dsv** (parsing CSV)
-- **@number-flow/svelte** (joli compteur animé)
-- GitHub Actions + Pages
+- SvelteKit + Vite
+- Tailwind CSS
+- d3-dsv
+- @number-flow/svelte
+- GitHub Actions/Pages
+- R
+
+---
+
+## 📚 Licence & crédits
+
+- **Code** : MIT.
 
 ---
 
 ## 🤝 Contribuer
 
-Issues et PRs bienvenues ! Si vous avez des idées d’améliorations (UI, perf, nouvelles stats), n’hésitez pas.
-
----
-
-## 📜 Licence
-
-MIT — fais-en bon usage ✌️
+Issues/PR bienvenues (améliorations (UI, perfs, stats))
