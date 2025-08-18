@@ -114,7 +114,12 @@ combine_script.R                  # combine les CSV → loto_combined.csv (puis 
 
 ## 🛠️ Stack
 
-SvelteKit + Vite • Tailwind CSS • d3-dsv • @number-flow/svelte • GitHub Actions/Pages • R
+- SvelteKit + Vite
+- Tailwind CSS
+- d3-dsv
+- @number-flow/svelte
+- GitHub Actions/Pages
+- R
 
 ---
 
@@ -126,4 +131,4 @@ SvelteKit + Vite • Tailwind CSS • d3-dsv • @number-flow/svelte • GitHub 
 
 ## 🤝 Contribuer
 
-Issues/PR bienvenues. Idées d’améliorations (UI, perfs, stats) → go !
+Issues/PR bienvenues (améliorations (UI, perfs, stats))
