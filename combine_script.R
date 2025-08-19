@@ -78,12 +78,11 @@ if (length(nouveaux_fichiers) > 0) {
   cat("📥 Nouveaux fichiers trouvés à la racine:", paste(nouveaux_fichiers, collapse = ", "), "\n")
   # Copier vers static/data pour traitement
   for (fichier in nouveaux_fichiers) {
+    chemin_src  <- fichier
     chemin_dest <- file.path(repertoire_donnees, fichier)
-    if (!file.exists(chemin_dest)) {
-      dir.create(repertoire_donnees, recursive = TRUE, showWarnings = FALSE)
-      file.copy(fichier, chemin_dest)
-      cat("   Copié", fichier, "vers", repertoire_donnees, "\n")
-    }
+    dir.create(repertoire_donnees, recursive = TRUE, showWarnings = FALSE)
+    ok <- file.copy(chemin_src, chemin_dest, overwrite = TRUE)
+    cat("   Copie forcée", fichier, "→", chemin_dest, if (ok) " [OK]\n" else " [ECHEC]\n")
   }
 }
 
