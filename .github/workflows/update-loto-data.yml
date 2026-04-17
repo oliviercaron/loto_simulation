@@ -4,10 +4,10 @@ on:
   # Lancement manuel depuis l’onglet "Actions"
   workflow_dispatch:
 
-  # Lancement automatique chaque lundi à 5h du matin heure de Paris
-  # (cron en UTC → 3h UTC en été)
+  # Lancement automatique le lendemain de chaque tirage (lun, mer, sam)
+  # → mardi, jeudi, dimanche à 5h du matin heure de Paris (3h UTC en été)
   schedule:
-    - cron: '0 3 * * 1'
+    - cron: '0 3 * * 0,2,4'
 
 # Autorisations minimales nécessaires pour pouvoir pousser le fichier CSV mis à jour
 permissions:
